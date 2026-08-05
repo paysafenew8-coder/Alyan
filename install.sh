@@ -29,7 +29,7 @@ cat << 'EOF' > /usr/bin/add-ssl
 echo "========================================="
 echo "       RareTrickks SSL Manager           "
 echo "========================================="
-read -p "Enter your Domain Name (e.g., pr.alyan.tech): " DOMAIN
+read -p "Enter your Domain Name (e.g., your.domain.com): " DOMAIN
 
 echo "[+] Stopping web services to free port 80..."
 systemctl stop ws-proxy.service
