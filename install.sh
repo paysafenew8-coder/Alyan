@@ -9,27 +9,45 @@ echo "[+] Updating system and installing required packages..."
 apt-get update -y
 apt-get install python3 python3-pip stunnel4 openssh-server unzip wget certbot -y
 
-# 2. Panel Data Download
+# 2. Enable BBR & Network Optimizations (Fixes Speed Drop & Stalling)
+echo "[+] Applying TCP BBR and Network Performance Tweaks..."
+if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf; then
+    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+    sysctl -p
+fi
+
+# 3. Optimize SSH Keep-Alive to Prevent Connection Freezing
+echo "[+] Optimizing SSH Keep-Alive settings..."
+sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config
+sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config
+sed -i '/TCPKeepAlive/d' /etc/ssh/sshd_config
+echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
+echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
+echo "TCPKeepAlive yes" >> /etc/ssh/sshd_config
+systemctl restart ssh
+
+# 4. Panel Data Download
 echo "[+] Downloading Panel Raw Data..."
 wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/refs/heads/main/panel_backup%20(1).zip"
 
-# 3. Extracting Data
+# 5. Extracting Data
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 4. Fixing Permissions
+# 6. Fixing Permissions
 echo "[+] Setting up executable permissions..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
 
-# 5. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
+# 7. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
 cat << 'EOF' > /usr/bin/add-ssl
 #!/bin/bash
 echo "========================================="
 echo "       RareTrickks SSL Manager           "
 echo "========================================="
-read -p "Enter your Domain Name (e.g., your.domain.com): " DOMAIN
+read -p "Enter your Domain Name (e.g., Your.domain.com): " DOMAIN
 
 echo "[+] Stopping web services to free port 80..."
 systemctl stop ws-proxy.service
@@ -72,7 +90,7 @@ EOF
 
 chmod +x /usr/bin/add-ssl
 
-# 6. Writing a Clean & Fixed Menu Script from Scratch
+# 8. Writing a Clean & Fixed Menu Script from Scratch
 echo "[+] Creating clean Terminal Menu..."
 cat << 'EOF' > /usr/local/bin/menu
 #!/bin/bash
@@ -141,7 +159,7 @@ cp /usr/local/bin/menu /usr/bin/menu
 chmod +x /usr/local/bin/menu
 chmod +x /usr/bin/menu
 
-# 7. Reloading Systemd and Starting Custom Services
+# 9. Reloading Systemd and Starting Custom Services
 echo "[+] Configuring and starting RareTrickks Services..."
 systemctl daemon-reload
 
@@ -150,7 +168,7 @@ systemctl enable --now raretriccks-monitor.service
 systemctl enable --now ws-proxy.service
 systemctl enable --now ip-monitor.service
 
-# 8. Restarting SSH and Stunnel4
+# 10. Restarting SSH and Stunnel4
 echo "[+] Restarting SSH and Stunnel4..."
 systemctl restart ssh
 systemctl restart stunnel4
@@ -160,5 +178,6 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - BBR & Keep-Alive Optimized!"
 echo " - Type 'menu' to open your panel dashboard."
 echo "========================================="
