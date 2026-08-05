@@ -36,12 +36,14 @@ wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/r
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 6. Fixing Permissions & Patching Double Data Count Bug
-echo "[+] Setting up permissions and fixing Data Count Bug..."
+# 6. Fixing Permissions, Data Count Bug, and Delete Button Bug
+echo "[+] Setting up permissions and fixing bugs..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
-# The Bug Fix: Divides counted bytes by 2 to prevent RX+TX double proxy counting
+# The Bug Fix 1: Divides counted bytes by 2 to prevent RX+TX double proxy counting
 sed -i 's/new_bytes \/ 1048576.0/new_bytes \/ 2097152.0/g' /usr/local/bin/raretriccks_monitor.py
+# The Bug Fix 2: Adds missing Flask route for delete_user function
+sed -i 's/def delete_user():/@app.route("\/api\/delete-user", methods=["POST"])\ndef delete_user():/g' /usr/local/bin/raretriccks_web.py
 
 # 7. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
@@ -201,6 +203,7 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Delete User Button BUG FIXED!"
 echo " - Flask Missing Bug FIXED!"
 echo " - Data Double Counting BUG FIXED!"
 echo " - BBR & Keep-Alive Optimized!"
