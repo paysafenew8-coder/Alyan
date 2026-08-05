@@ -35,10 +35,12 @@ wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/r
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 6. Fixing Permissions
-echo "[+] Setting up executable permissions..."
+# 6. Fixing Permissions & Patching Double Data Count Bug
+echo "[+] Setting up permissions and fixing Data Count Bug..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
+# The Bug Fix: Divides counted bytes by 2 to prevent RX+TX double proxy counting
+sed -i 's/new_bytes \/ 1048576.0/new_bytes \/ 2097152.0/g' /usr/local/bin/raretriccks_monitor.py
 
 # 7. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
@@ -181,6 +183,8 @@ chmod +x /usr/bin/menu
 echo "[+] Configuring and starting RareTrickks Services..."
 systemctl daemon-reload
 
+systemctl restart raretriccks-monitor.service
+
 systemctl enable --now raretriccks-web.service
 systemctl enable --now raretriccks-monitor.service
 systemctl enable --now ws-proxy.service
@@ -196,6 +200,7 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Data Double Counting BUG FIXED!"
 echo " - BBR & Keep-Alive Optimized!"
 echo " - Type 'menu' to open your panel dashboard."
 echo "========================================="
