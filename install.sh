@@ -120,7 +120,25 @@ while true; do
 
     case $choice in
         1)
-            python3 -c "import raretriccks_web; raretriccks_web.change_credentials()"
+            echo -e "\n--- Change Admin Credentials ---"
+            read -p "Enter new Admin Username: " new_user
+            read -p "Enter new Admin Password: " new_pass
+            export NEW_USER="$new_user"
+            export NEW_PASS="$new_pass"
+            python3 -c '
+import json, os
+c="/etc/raretriccks/panel_config.json"
+d={}
+if os.path.exists(c):
+    try:
+        with open(c) as f: d=json.load(f)
+    except: pass
+d["admin_user"]=os.environ.get("NEW_USER")
+d["admin_pass"]=os.environ.get("NEW_PASS")
+with open(c, "w") as f: json.dump(d, f)
+'
+            systemctl restart raretriccks-web.service
+            echo -e "\n[+] Credentials updated successfully! Web panel restarted."
             read -p "Press Enter to return to menu..."
             ;;
         2)
@@ -135,7 +153,7 @@ while true; do
             read -p "Are you sure you want to uninstall? (y/n): " confirm
             if [[ $confirm == "y" ]]; then
                 systemctl stop raretriccks-web.service raretriccks-monitor.service ws-proxy.service
-                rm -rf /usr/local/bin/raretriccks* /usr/bin/add-ssl /usr/bin/menu /usr/local/bin/menu
+                rm -rf /usr/local/bin/raretriccks* /usr/bin/add-ssl /usr/bin/menu /usr/local/bin/menu /etc/raretriccks
                 echo "Panel uninstalled completely."
                 exit 0
             fi
