@@ -7,7 +7,8 @@ echo "========================================="
 # 1. System Update & Dependencies Install
 echo "[+] Updating system and installing required packages..."
 apt-get update -y
-apt-get install python3 python3-pip stunnel4 openssh-server unzip wget certbot -y
+# FIX: Added 'python3-flask' to automatically install Flask and prevent panel crash
+apt-get install python3 python3-pip python3-flask stunnel4 openssh-server unzip wget certbot -y
 
 # 2. Enable BBR & Network Optimizations (Fixes Speed Drop & Stalling)
 echo "[+] Applying TCP BBR and Network Performance Tweaks..."
@@ -200,6 +201,7 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Flask Missing Bug FIXED!"
 echo " - Data Double Counting BUG FIXED!"
 echo " - BBR & Keep-Alive Optimized!"
 echo " - Type 'menu' to open your panel dashboard."
