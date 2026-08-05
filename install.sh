@@ -2,7 +2,6 @@
 
 echo "========================================="
 echo "   RareTrickks Panel Auto-Installer      "
-echo "    (Direct SSL + Menu Option Integrated)"
 echo "========================================="
 
 # 1. System Update & Dependencies Install
@@ -22,8 +21,6 @@ unzip -o /root/panel_backup.zip -d /
 echo "[+] Setting up executable permissions..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
-chmod +x /usr/local/bin/menu
-chmod +x /usr/bin/menu
 
 # 5. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
@@ -75,32 +72,72 @@ EOF
 
 chmod +x /usr/bin/add-ssl
 
-# 6. Safely Patching the 'menu' script to add SSL Option cleanly
-echo "[+] Adding SSL option to Panel Menu..."
-python3 - << 'PYEOF'
-import os
+# 6. Writing a Clean & Fixed Menu Script from Scratch
+echo "[+] Creating clean Terminal Menu..."
+cat << 'EOF' > /usr/local/bin/menu
+#!/bin/bash
+while true; do
+    clear
+    IP=$(hostname -I | awk '{print $1}')
+    echo "========================================="
+    echo "    RareTrickks Panel Terminal Menu      "
+    echo "========================================="
+    echo "VPS Server IP : $IP"
+    echo "Web Panel URL : http://$IP:2026"
+    echo "-----------------------------------------"
+    if systemctl is-active --quiet raretriccks-web.service; then
+        echo "Web Dashboard : [ ACTIVE ]"
+    else
+        echo "Web Dashboard : [ STOPPED ]"
+    fi
+    echo "-----------------------------------------"
+    echo "1) Change Web Panel Username & Password"
+    echo "2) View Web Panel Logs"
+    echo "3) View Panel Status & Information"
+    echo "4) Completely Uninstall Panel"
+    echo "5) Add Domain & Install SSL"
+    echo "0) Exit Menu"
+    echo "========================================="
+    read -p "Select Option [0-5]: " choice
 
-menu_paths = ['/usr/local/bin/menu', '/usr/bin/menu']
-for path in menu_paths:
-    if os.path.exists(path):
-        with open(path, 'r') as f:
-            content = f.read()
-        
-        # Clean up if old bad patches exist
-        content = content.replace("5)\n    add-ssl\n    read -p 'Press Enter to return to menu...'\n    menu\n    ;;\n    0)", "0)")
-        
-        if "5) Add Domain & Install SSL" not in content:
-            content = content.replace("[0-4]", "[0-5]")
-            content = content.replace("0) Exit Menu", "5) Add Domain & Install SSL\n0) Exit Menu")
-            
-            if "0)" in content:
-                ssl_case = "5)\n        add-ssl\n        read -p 'Press Enter to return to menu...'\n        menu\n        ;;\n    0)"
-                content = content.replace("0)", ssl_case)
-            
-            with open(path, 'w') as f:
-                f.write(content)
-PYEOF
+    case $choice in
+        1)
+            python3 -c "import raretriccks_web; raretriccks_web.change_credentials()"
+            read -p "Press Enter to return to menu..."
+            ;;
+        2)
+            journalctl -u raretriccks-web.service -n 50 --no-pager
+            read -p "Press Enter to return to menu..."
+            ;;
+        3)
+            systemctl status raretriccks-web.service raretriccks-monitor.service --no-pager
+            read -p "Press Enter to return to menu..."
+            ;;
+        4)
+            read -p "Are you sure you want to uninstall? (y/n): " confirm
+            if [[ $confirm == "y" ]]; then
+                systemctl stop raretriccks-web.service raretriccks-monitor.service ws-proxy.service
+                rm -rf /usr/local/bin/raretriccks* /usr/bin/add-ssl /usr/bin/menu /usr/local/bin/menu
+                echo "Panel uninstalled completely."
+                exit 0
+            fi
+            ;;
+        5)
+            add-ssl
+            read -p "Press Enter to return to menu..."
+            ;;
+        0)
+            exit 0
+            ;;
+        *)
+            echo "Invalid option, try again."
+            sleep 1
+            ;;
+    esac
+done
+EOF
 
+cp /usr/local/bin/menu /usr/bin/menu
 chmod +x /usr/local/bin/menu
 chmod +x /usr/bin/menu
 
@@ -124,5 +161,4 @@ rm -f /root/panel_backup.zip
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
 echo " - Type 'menu' to open your panel dashboard."
-echo " - Option 5 is now fully functional!"
 echo "========================================="
