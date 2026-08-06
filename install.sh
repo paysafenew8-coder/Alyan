@@ -16,7 +16,7 @@ if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf; then
     echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
 fi
-# Fix for Idle Connection Drops (Reduces check time from 2 hours to 60 seconds)
+# Fix for Idle Connection Drops
 if ! grep -q "tcp_keepalive_time" /etc/sysctl.conf; then
     echo "net.ipv4.tcp_keepalive_time=60" >> /etc/sysctl.conf
     echo "net.ipv4.tcp_keepalive_intvl=10" >> /etc/sysctl.conf
@@ -36,8 +36,8 @@ echo "TCPKeepAlive yes" >> /etc/ssh/sshd_config
 sed -i 's/.*UseDNS.*/UseDNS no/g' /etc/ssh/sshd_config
 if ! grep -q "^UseDNS no" /etc/ssh/sshd_config; then echo "UseDNS no" >> /etc/ssh/sshd_config; fi
 
-# 4. Advanced Encryption Tuning (Lightweight Mobile Tunneling)
-echo "[+] Applying Lightweight Encryption Ciphers for Fast Ping..."
+# 4. Advanced Encryption Tuning (Lightweight Mobile Tunneling for Fast Ping)
+echo "[+] Applying Lightweight Encryption Ciphers..."
 sed -i '/^Ciphers/d' /etc/ssh/sshd_config
 sed -i '/^MACs/d' /etc/ssh/sshd_config
 echo "Ciphers aes128-ctr,chacha20-poly1305@openssh.com" >> /etc/ssh/sshd_config
@@ -52,10 +52,16 @@ wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/r
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 7. Fixing Bugs & Optimizing Proxy Priority
+# 7. Fixing Bugs & Optimizing Proxy/Stunnel Priority
 echo "[+] Setting up permissions and patching bugs..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
+
+# Auto-Generate Default Stunnel Certificate so VPN never crashes on fresh install
+openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=PK/CN=DarkTunnel"
+sed -i 's|cert = .*|cert = /etc/stunnel/stunnel.pem|g' /etc/stunnel/stunnel.conf
+sed -i '/key = .*/d' /etc/stunnel/stunnel.conf
+
 # The Bug Fix 1: Divides counted bytes by 2 to prevent RX+TX double proxy counting
 sed -i 's/new_bytes \/ 1048576.0/new_bytes \/ 2097152.0/g' /usr/local/bin/raretriccks_monitor.py
 # The Bug Fix 2: Adds missing Flask route for delete_user function
@@ -64,7 +70,7 @@ sed -i 's/def delete_user():/@app.route("\/api\/delete-user", methods=["POST"])\
 if ! grep -q "TIMEOUTidle" /etc/stunnel/stunnel.conf; then
     sed -i '1i TIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
 fi
-# Ensure Stunnel TCP_NODELAY is ON for Real-Time Gaming/Ping
+# Ensure Stunnel TCP_NODELAY is ON for Real-Time Ping
 if ! grep -q "TCP_NODELAY" /etc/stunnel/stunnel.conf; then
     sed -i '/SO_KEEPALIVE=1/a socket = l:TCP_NODELAY=1\nsocket = r:TCP_NODELAY=1' /etc/stunnel/stunnel.conf
 fi
@@ -73,7 +79,7 @@ sed -i 's/recv(4096)/recv(65536)/g' /usr/local/bin/ws-proxy.py
 # The Bug Fix 5: Forces Linux to give VIP Real-Time priority to the proxy (Fixes Crashouts)
 sed -i '/\[Service\]/a Nice=-15\nIOSchedulingClass=realtime' /etc/systemd/system/ws-proxy.service
 
-# 8. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
+# 8. Creating Direct-Path SSL Manager Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
 cat << 'EOF' > /usr/bin/add-ssl
 #!/bin/bash
@@ -82,10 +88,9 @@ echo "       RareTrickks SSL Manager           "
 echo "========================================="
 read -p "Enter your Domain Name (e.g., Your.domain.com): " DOMAIN
 
-echo "[+] Stopping web services to free port 80..."
+echo "[+] Stopping services to free port 80..."
 systemctl stop ws-proxy.service
 systemctl stop raretriccks-web.service
-systemctl stop stunnel4
 
 echo "[+] Generating SSL Certificate via Certbot..."
 certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN
@@ -93,29 +98,31 @@ certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@
 if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo "[+] SSL Generated Successfully!"
     
-    # Configure Stunnel with Direct Paths
-    if ! grep -q "\[panel-ssl\]" /etc/stunnel/stunnel.conf; then
-        cat << STUNNEL >> /etc/stunnel/stunnel.conf
+    # Shift Python Panel to backstage port 2027
+    sed -i 's/port=2026/port=2027/g' /usr/local/bin/raretriccks_web.py
+    
+    # Remove any old panel-ssl block
+    sed -i '/\[panel-ssl\]/,$d' /etc/stunnel/stunnel.conf
+    
+    # Attach valid SSL to Stunnel and listen on 2026 for the panel
+    cat << STUNNEL >> /etc/stunnel/stunnel.conf
 
 [panel-ssl]
-accept = 443
-connect = 127.0.0.1:2026
+accept = 2026
+connect = 127.0.0.1:2027
 cert = /etc/letsencrypt/live/$DOMAIN/fullchain.pem
 key = /etc/letsencrypt/live/$DOMAIN/privkey.pem
 STUNNEL
-    else
-        sed -i "s|cert = .*|cert = /etc/letsencrypt/live/$DOMAIN/fullchain.pem|g" /etc/stunnel/stunnel.conf
-        sed -i "s|key = .*|key = /etc/letsencrypt/live/$DOMAIN/privkey.pem|g" /etc/stunnel/stunnel.conf
-    fi
 
-    echo "[+] Restarting Stunnel and Web Services..."
+    echo "[+] Restarting Services..."
     systemctl restart stunnel4
-    systemctl start ws-proxy.service
     systemctl start raretriccks-web.service
-    echo "[+] SSL Configured Successfully!"
+    systemctl start ws-proxy.service
+    
+    echo "[+] SUCCESS: Your domain $DOMAIN is now securely linked to port 2026!"
+    echo "[+] You can access the panel at: https://$DOMAIN:2026"
 else
     echo "[-] SSL Generation Failed. Check your domain's DNS A-Record."
-    systemctl start stunnel4
     systemctl start ws-proxy.service
     systemctl start raretriccks-web.service
 fi
@@ -231,12 +238,11 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Port 2026 Domain SSL Routing Added!"
+echo " - Default VPN Fallback Certificate Applied!"
 echo " - Advanced CPU Priority Set!"
 echo " - Lightweight Encryption Applied!"
 echo " - Ping/Latency Optimization Applied!"
-echo " - Idle Connection Freeze BUG FIXED!"
-echo " - Delete User Button BUG FIXED!"
-echo " - Flask Missing Bug FIXED!"
 echo " - Data Double Counting BUG FIXED!"
 echo " - Type 'menu' to open your panel dashboard."
 echo "========================================="
