@@ -10,13 +10,19 @@ apt-get update -y
 # FIX: Added 'python3-flask' to automatically install Flask and prevent panel crash
 apt-get install python3 python3-pip python3-flask stunnel4 openssh-server unzip wget certbot -y
 
-# 2. Enable BBR & Network Optimizations (Fixes Speed Drop & Stalling)
-echo "[+] Applying TCP BBR and Network Performance Tweaks..."
+# 2. Enable BBR & Aggressive Network Tuning (Fixes Idle Connection Freeze)
+echo "[+] Applying TCP BBR and Aggressive Keepalive Tweaks..."
 if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf; then
     echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-    sysctl -p
 fi
+# Fix for Idle Connection Drops (Reduces check time from 2 hours to 60 seconds)
+if ! grep -q "tcp_keepalive_time" /etc/sysctl.conf; then
+    echo "net.ipv4.tcp_keepalive_time=60" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_keepalive_intvl=10" >> /etc/sysctl.conf
+    echo "net.ipv4.tcp_keepalive_probes=6" >> /etc/sysctl.conf
+fi
+sysctl -p
 
 # 3. Optimize SSH Keep-Alive to Prevent Connection Freezing
 echo "[+] Optimizing SSH Keep-Alive settings..."
@@ -36,14 +42,18 @@ wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/r
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 6. Fixing Permissions, Data Count Bug, and Delete Button Bug
-echo "[+] Setting up permissions and fixing bugs..."
+# 6. Fixing Bugs: Permissions, Data Count, Delete Button, and Stunnel Timeout
+echo "[+] Setting up permissions and patching bugs..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
 # The Bug Fix 1: Divides counted bytes by 2 to prevent RX+TX double proxy counting
 sed -i 's/new_bytes \/ 1048576.0/new_bytes \/ 2097152.0/g' /usr/local/bin/raretriccks_monitor.py
 # The Bug Fix 2: Adds missing Flask route for delete_user function
 sed -i 's/def delete_user():/@app.route("\/api\/delete-user", methods=["POST"])\ndef delete_user():/g' /usr/local/bin/raretriccks_web.py
+# The Bug Fix 3: Prevents Stunnel from killing idle connections
+if ! grep -q "TIMEOUTidle" /etc/stunnel/stunnel.conf; then
+    sed -i '1i TIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
+fi
 
 # 7. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
@@ -203,9 +213,9 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Idle Connection Freeze BUG FIXED!"
 echo " - Delete User Button BUG FIXED!"
 echo " - Flask Missing Bug FIXED!"
 echo " - Data Double Counting BUG FIXED!"
-echo " - BBR & Keep-Alive Optimized!"
 echo " - Type 'menu' to open your panel dashboard."
 echo "========================================="
