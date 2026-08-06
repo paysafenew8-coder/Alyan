@@ -24,25 +24,35 @@ if ! grep -q "tcp_keepalive_time" /etc/sysctl.conf; then
 fi
 sysctl -p
 
-# 3. Optimize SSH Keep-Alive to Prevent Connection Freezing
-echo "[+] Optimizing SSH Keep-Alive settings..."
+# 3. Optimize SSH Settings (Keep-Alive & Connection Spike Fix)
+echo "[+] Optimizing SSH Keep-Alive & DNS settings..."
 sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config
 sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config
 sed -i '/TCPKeepAlive/d' /etc/ssh/sshd_config
 echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
 echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
 echo "TCPKeepAlive yes" >> /etc/ssh/sshd_config
+# Fix for Initial Connection Spike (1800ms delay)
+sed -i 's/.*UseDNS.*/UseDNS no/g' /etc/ssh/sshd_config
+if ! grep -q "^UseDNS no" /etc/ssh/sshd_config; then echo "UseDNS no" >> /etc/ssh/sshd_config; fi
+
+# 4. Advanced Encryption Tuning (Lightweight Mobile Tunneling)
+echo "[+] Applying Lightweight Encryption Ciphers for Fast Ping..."
+sed -i '/^Ciphers/d' /etc/ssh/sshd_config
+sed -i '/^MACs/d' /etc/ssh/sshd_config
+echo "Ciphers aes128-ctr,chacha20-poly1305@openssh.com" >> /etc/ssh/sshd_config
+echo "MACs hmac-sha1,umac-64@openssh.com" >> /etc/ssh/sshd_config
 systemctl restart ssh
 
-# 4. Panel Data Download
+# 5. Panel Data Download
 echo "[+] Downloading Panel Raw Data..."
 wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/refs/heads/main/panel_backup%20(1).zip"
 
-# 5. Extracting Data
+# 6. Extracting Data
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 6. Fixing Bugs: Permissions, Data Count, Delete Button, and Stunnel Timeout
+# 7. Fixing Bugs & Optimizing Proxy Priority
 echo "[+] Setting up permissions and patching bugs..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
@@ -54,8 +64,16 @@ sed -i 's/def delete_user():/@app.route("\/api\/delete-user", methods=["POST"])\
 if ! grep -q "TIMEOUTidle" /etc/stunnel/stunnel.conf; then
     sed -i '1i TIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
 fi
+# Ensure Stunnel TCP_NODELAY is ON for Real-Time Gaming/Ping
+if ! grep -q "TCP_NODELAY" /etc/stunnel/stunnel.conf; then
+    sed -i '/SO_KEEPALIVE=1/a socket = l:TCP_NODELAY=1\nsocket = r:TCP_NODELAY=1' /etc/stunnel/stunnel.conf
+fi
+# The Bug Fix 4: Safely reduces Ping/Latency by increasing Proxy Buffer Size from 4KB to 64KB
+sed -i 's/recv(4096)/recv(65536)/g' /usr/local/bin/ws-proxy.py
+# The Bug Fix 5: Forces Linux to give VIP Real-Time priority to the proxy (Fixes Crashouts)
+sed -i '/\[Service\]/a Nice=-15\nIOSchedulingClass=realtime' /etc/systemd/system/ws-proxy.service
 
-# 7. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
+# 8. Creating Direct-Path SSL Script (/usr/bin/add-ssl)
 echo "[+] Setting up SSL Manager..."
 cat << 'EOF' > /usr/bin/add-ssl
 #!/bin/bash
@@ -105,7 +123,7 @@ EOF
 
 chmod +x /usr/bin/add-ssl
 
-# 8. Writing a Clean & Fixed Menu Script from Scratch
+# 9. Writing a Clean & Fixed Menu Script from Scratch
 echo "[+] Creating clean Terminal Menu..."
 cat << 'EOF' > /usr/local/bin/menu
 #!/bin/bash
@@ -192,7 +210,7 @@ cp /usr/local/bin/menu /usr/bin/menu
 chmod +x /usr/local/bin/menu
 chmod +x /usr/bin/menu
 
-# 9. Reloading Systemd and Starting Custom Services
+# 10. Reloading Systemd and Starting Custom Services
 echo "[+] Configuring and starting RareTrickks Services..."
 systemctl daemon-reload
 
@@ -203,7 +221,7 @@ systemctl enable --now raretriccks-monitor.service
 systemctl enable --now ws-proxy.service
 systemctl enable --now ip-monitor.service
 
-# 10. Restarting SSH and Stunnel4
+# 11. Restarting SSH and Stunnel4
 echo "[+] Restarting SSH and Stunnel4..."
 systemctl restart ssh
 systemctl restart stunnel4
@@ -213,6 +231,9 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Advanced CPU Priority Set!"
+echo " - Lightweight Encryption Applied!"
+echo " - Ping/Latency Optimization Applied!"
 echo " - Idle Connection Freeze BUG FIXED!"
 echo " - Delete User Button BUG FIXED!"
 echo " - Flask Missing Bug FIXED!"
