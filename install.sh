@@ -7,21 +7,27 @@ echo "========================================="
 # 1. System Update & Dependencies Install
 echo "[+] Updating system and installing required packages..."
 apt-get update -y
-# FIX: Added 'python3-flask' to automatically install Flask and prevent panel crash
 apt-get install python3 python3-pip python3-flask stunnel4 openssh-server unzip wget certbot -y
 
-# 2. Enable BBR & Aggressive Network Tuning (Fixes Idle Connection Freeze)
-echo "[+] Applying TCP BBR and Aggressive Keepalive Tweaks..."
-if ! grep -q "tcp_congestion_control=bbr" /etc/sysctl.conf; then
-    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
-fi
-# Fix for Idle Connection Drops
-if ! grep -q "tcp_keepalive_time" /etc/sysctl.conf; then
-    echo "net.ipv4.tcp_keepalive_time=60" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_keepalive_intvl=10" >> /etc/sysctl.conf
-    echo "net.ipv4.tcp_keepalive_probes=6" >> /etc/sysctl.conf
-fi
+# 2. Enable BBR & Aggressive Network Tuning (Duplicate-Free)
+echo "[+] Applying Aggressive Network Tweaks (Zero Buffering & BBR)..."
+# Smart Cleaner: Removes any existing duplicates first
+sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
+sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
+sed -i '/net.ipv4.tcp_keepalive_time/d' /etc/sysctl.conf
+sed -i '/net.ipv4.tcp_keepalive_intvl/d' /etc/sysctl.conf
+sed -i '/net.ipv4.tcp_keepalive_probes/d' /etc/sysctl.conf
+sed -i '/net.ipv4.tcp_slow_start_after_idle/d' /etc/sysctl.conf
+
+# Freshly Appending single copies
+cat << EOF >> /etc/sysctl.conf
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.ipv4.tcp_keepalive_time=60
+net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_probes=6
+net.ipv4.tcp_slow_start_after_idle=0
+EOF
 sysctl -p
 
 # 3. Optimize SSH Settings (Keep-Alive & Connection Spike Fix)
@@ -29,14 +35,13 @@ echo "[+] Optimizing SSH Keep-Alive & DNS settings..."
 sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config
 sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config
 sed -i '/TCPKeepAlive/d' /etc/ssh/sshd_config
+sed -i 's/.*UseDNS.*/UseDNS no/g' /etc/ssh/sshd_config
 echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
 echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
 echo "TCPKeepAlive yes" >> /etc/ssh/sshd_config
-# Fix for Initial Connection Spike (1800ms delay)
-sed -i 's/.*UseDNS.*/UseDNS no/g' /etc/ssh/sshd_config
-if ! grep -q "^UseDNS no" /etc/ssh/sshd_config; then echo "UseDNS no" >> /etc/ssh/sshd_config; fi
+echo "UseDNS no" >> /etc/ssh/sshd_config
 
-# 4. Advanced Encryption Tuning (Lightweight Mobile Tunneling for Fast Ping)
+# 4. Advanced Encryption Tuning (Lightweight Mobile Tunneling)
 echo "[+] Applying Lightweight Encryption Ciphers..."
 sed -i '/^Ciphers/d' /etc/ssh/sshd_config
 sed -i '/^MACs/d' /etc/ssh/sshd_config
@@ -52,31 +57,33 @@ wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/r
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 7. Fixing Bugs & Optimizing Proxy/Stunnel Priority
+# 7. Fixing Bugs, CPU Priority & Reboot Glitches
 echo "[+] Setting up permissions and patching bugs..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
 
-# Auto-Generate Default Stunnel Certificate so VPN never crashes on fresh install
+# Auto-Generate Default Stunnel Certificate (Prevents Crash on Fresh Install)
 openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=PK/CN=DarkTunnel"
 sed -i 's|cert = .*|cert = /etc/stunnel/stunnel.pem|g' /etc/stunnel/stunnel.conf
 sed -i '/key = .*/d' /etc/stunnel/stunnel.conf
 
-# The Bug Fix 1: Divides counted bytes by 2 to prevent RX+TX double proxy counting
+# Stunnel Reboot Fix (Ensures VPN starts automatically after VPS restarts)
+sed -i 's/ENABLED=0/ENABLED=1/g' /etc/default/stunnel4
+
+# Python Bugs Fix
 sed -i 's/new_bytes \/ 1048576.0/new_bytes \/ 2097152.0/g' /usr/local/bin/raretriccks_monitor.py
-# The Bug Fix 2: Adds missing Flask route for delete_user function
 sed -i 's/def delete_user():/@app.route("\/api\/delete-user", methods=["POST"])\ndef delete_user():/g' /usr/local/bin/raretriccks_web.py
-# The Bug Fix 3: Prevents Stunnel from killing idle connections
-if ! grep -q "TIMEOUTidle" /etc/stunnel/stunnel.conf; then
-    sed -i '1i TIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
-fi
-# Ensure Stunnel TCP_NODELAY is ON for Real-Time Ping
-if ! grep -q "TCP_NODELAY" /etc/stunnel/stunnel.conf; then
-    sed -i '/SO_KEEPALIVE=1/a socket = l:TCP_NODELAY=1\nsocket = r:TCP_NODELAY=1' /etc/stunnel/stunnel.conf
-fi
-# The Bug Fix 4: Safely reduces Ping/Latency by increasing Proxy Buffer Size from 4KB to 64KB
 sed -i 's/recv(4096)/recv(65536)/g' /usr/local/bin/ws-proxy.py
-# The Bug Fix 5: Forces Linux to give VIP Real-Time priority to the proxy (Fixes Crashouts)
+
+# Stunnel Advanced Fixes (Clean before add to prevent duplicates)
+sed -i '/TIMEOUTidle/d' /etc/stunnel/stunnel.conf
+sed -i '/TCP_NODELAY/d' /etc/stunnel/stunnel.conf
+sed -i '1i TIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
+sed -i '/SO_KEEPALIVE=1/a socket = l:TCP_NODELAY=1\nsocket = r:TCP_NODELAY=1' /etc/stunnel/stunnel.conf
+
+# WS-Proxy CPU Priority (Clean before add)
+sed -i '/Nice=-15/d' /etc/systemd/system/ws-proxy.service
+sed -i '/IOSchedulingClass=realtime/d' /etc/systemd/system/ws-proxy.service
 sed -i '/\[Service\]/a Nice=-15\nIOSchedulingClass=realtime' /etc/systemd/system/ws-proxy.service
 
 # 8. Creating Direct-Path SSL Manager Script (/usr/bin/add-ssl)
@@ -98,13 +105,10 @@ certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@
 if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo "[+] SSL Generated Successfully!"
     
-    # Shift Python Panel to backstage port 2027
+    # Backstage Swap Logic
     sed -i 's/port=2026/port=2027/g' /usr/local/bin/raretriccks_web.py
-    
-    # Remove any old panel-ssl block
     sed -i '/\[panel-ssl\]/,$d' /etc/stunnel/stunnel.conf
     
-    # Attach valid SSL to Stunnel and listen on 2026 for the panel
     cat << STUNNEL >> /etc/stunnel/stunnel.conf
 
 [panel-ssl]
@@ -114,24 +118,21 @@ cert = /etc/letsencrypt/live/$DOMAIN/fullchain.pem
 key = /etc/letsencrypt/live/$DOMAIN/privkey.pem
 STUNNEL
 
-    echo "[+] Restarting Services..."
     systemctl restart stunnel4
     systemctl start raretriccks-web.service
     systemctl start ws-proxy.service
     
-    echo "[+] SUCCESS: Your domain $DOMAIN is now securely linked to port 2026!"
-    echo "[+] You can access the panel at: https://$DOMAIN:2026"
+    echo "[+] SUCCESS: Your domain $DOMAIN is securely linked to port 2026!"
 else
-    echo "[-] SSL Generation Failed. Check your domain's DNS A-Record."
+    echo "[-] SSL Generation Failed. Check your DNS records."
     systemctl start ws-proxy.service
     systemctl start raretriccks-web.service
 fi
 EOF
-
 chmod +x /usr/bin/add-ssl
 
-# 9. Writing a Clean & Fixed Menu Script from Scratch
-echo "[+] Creating clean Terminal Menu..."
+# 9. Writing a Clean Menu Script
+echo "[+] Creating Terminal Menu..."
 cat << 'EOF' > /usr/local/bin/menu
 #!/bin/bash
 while true; do
@@ -160,7 +161,6 @@ while true; do
 
     case $choice in
         1)
-            echo -e "\n--- Change Admin Credentials ---"
             read -p "Enter new Admin Username: " new_user
             read -p "Enter new Admin Password: " new_pass
             export NEW_USER="$new_user"
@@ -178,16 +178,16 @@ d["admin_pass"]=os.environ.get("NEW_PASS")
 with open(c, "w") as f: json.dump(d, f)
 '
             systemctl restart raretriccks-web.service
-            echo -e "\n[+] Credentials updated successfully! Web panel restarted."
-            read -p "Press Enter to return to menu..."
+            echo "[+] Credentials updated! Web panel restarted."
+            read -p "Press Enter to return..."
             ;;
         2)
             journalctl -u raretriccks-web.service -n 50 --no-pager
-            read -p "Press Enter to return to menu..."
+            read -p "Press Enter to return..."
             ;;
         3)
             systemctl status raretriccks-web.service raretriccks-monitor.service --no-pager
-            read -p "Press Enter to return to menu..."
+            read -p "Press Enter to return..."
             ;;
         4)
             read -p "Are you sure you want to uninstall? (y/n): " confirm
@@ -200,49 +200,42 @@ with open(c, "w") as f: json.dump(d, f)
             ;;
         5)
             add-ssl
-            read -p "Press Enter to return to menu..."
+            read -p "Press Enter to return..."
             ;;
         0)
             exit 0
             ;;
         *)
-            echo "Invalid option, try again."
+            echo "Invalid option."
             sleep 1
             ;;
     esac
 done
 EOF
-
 cp /usr/local/bin/menu /usr/bin/menu
 chmod +x /usr/local/bin/menu
 chmod +x /usr/bin/menu
 
-# 10. Reloading Systemd and Starting Custom Services
-echo "[+] Configuring and starting RareTrickks Services..."
+# 10. Reloading Systemd and Starting Services
+echo "[+] Starting RareTrickks Services..."
 systemctl daemon-reload
-
-systemctl restart raretriccks-monitor.service
-
+systemctl enable stunnel4
 systemctl enable --now raretriccks-web.service
 systemctl enable --now raretriccks-monitor.service
 systemctl enable --now ws-proxy.service
-systemctl enable --now ip-monitor.service
+systemctl restart raretriccks-monitor.service
 
-# 11. Restarting SSH and Stunnel4
-echo "[+] Restarting SSH and Stunnel4..."
+# 11. Restarting Main Tunnels
+echo "[+] Finalizing Setup..."
 systemctl restart ssh
 systemctl restart stunnel4
-
-# Cleanup
 rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
-echo " - Port 2026 Domain SSL Routing Added!"
-echo " - Default VPN Fallback Certificate Applied!"
-echo " - Advanced CPU Priority Set!"
-echo " - Lightweight Encryption Applied!"
-echo " - Ping/Latency Optimization Applied!"
-echo " - Data Double Counting BUG FIXED!"
-echo " - Type 'menu' to open your panel dashboard."
+echo " - Anti-Duplication System Active!"
+echo " - Video Buffering Bug FIXED!"
+echo " - Server Reboot Crash FIXED!"
+echo " - Domain SSL Routing Configured!"
+echo " - Type 'menu' to open your panel."
 echo "========================================="
