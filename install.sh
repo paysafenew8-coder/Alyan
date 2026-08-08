@@ -11,7 +11,6 @@ apt-get install python3 python3-pip python3-flask stunnel4 openssh-server unzip 
 
 # 2. Enable BBR & 2-Second Heartbeat Tuning (Duplicate-Free)
 echo "[+] Applying Aggressive Network Tweaks & 2-Second Heartbeat..."
-# Smart Cleaner: Removes any existing duplicates first
 sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_keepalive_time/d' /etc/sysctl.conf
@@ -19,7 +18,6 @@ sed -i '/net.ipv4.tcp_keepalive_intvl/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_keepalive_probes/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_slow_start_after_idle/d' /etc/sysctl.conf
 
-# Freshly Appending single copies with 2-second anti-drop heartbeat
 cat << EOF >> /etc/sysctl.conf
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
@@ -57,31 +55,43 @@ wget -O /root/panel_backup.zip "https://github.com/paysafenew8-coder/Alyan/raw/r
 echo "[+] Extracting data to system folders..."
 unzip -o /root/panel_backup.zip -d /
 
-# 7. Fixing Bugs, CPU Priority & Reboot Glitches
+# 7. Fixing Bugs, CPU Priority & Port Alignment
 echo "[+] Setting up permissions and patching bugs..."
 chmod +x /usr/local/bin/raretriccks*.py
 chmod +x /usr/local/bin/ws-proxy.py
 
-# Auto-Generate Default Stunnel Certificate (Prevents Crash on Fresh Install)
-openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=PK/CN=DarkTunnel"
-sed -i 's|cert = .*|cert = /etc/stunnel/stunnel.pem|g' /etc/stunnel/stunnel.conf
-sed -i '/key = .*/d' /etc/stunnel/stunnel.conf
-
 # Stunnel Reboot Fix & Service Auto-Enable
 sed -i 's/ENABLED=0/ENABLED=1/g' /etc/default/stunnel4
 
-# Python Bugs Fix
+# Python Bugs Fix & Port 2027 Backstage Shift for Panel
 sed -i 's/new_bytes \/ 1048576.0/new_bytes \/ 2097152.0/g' /usr/local/bin/raretriccks_monitor.py
 sed -i 's/def delete_user():/@app.route("\/api\/delete-user", methods=["POST"])\ndef delete_user():/g' /usr/local/bin/raretriccks_web.py
+sed -i 's/port=2026/port=2027/g' /usr/local/bin/raretriccks_web.py
+sed -i 's/port = 2026/port = 2027/g' /usr/local/bin/raretriccks_web.py
 sed -i 's/recv(4096)/recv(65536)/g' /usr/local/bin/ws-proxy.py
 
-# Stunnel Advanced Fixes (Clean before add to prevent duplicates)
-sed -i '/TIMEOUTidle/d' /etc/stunnel/stunnel.conf
-sed -i '/TCP_NODELAY/d' /etc/stunnel/stunnel.conf
-sed -i '1i TIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
-sed -i '/SO_KEEPALIVE=1/a socket = l:TCP_NODELAY=1\nsocket = r:TCP_NODELAY=1' /etc/stunnel/stunnel.conf
+# Stunnel Clean Configuration Setup
+openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=PK/CN=DarkTunnel"
+sed -i '/\[panel-ssl\]/,$d' /etc/stunnel/stunnel.conf
 
-# WS-Proxy CPU Priority (Clean before add)
+cat << STUNNEL >> /etc/stunnel/stunnel.conf
+
+[panel-ssl]
+accept = 2026
+connect = 127.0.0.1:2027
+cert = /etc/stunnel/stunnel.pem
+key = /etc/stunnel/stunnel.pem
+STUNNEL
+
+sed -i '/TIMEOUTclose/d' /etc/stunnel/stunnel.conf
+sed -i '/TIMEOUTidle/d' /etc/stunnel/stunnel.conf
+sed -i '1i TIMEOUTclose = 0\nTIMEOUTidle = 86400' /etc/stunnel/stunnel.conf
+
+if ! grep -q "TCP_NODELAY" /etc/stunnel/stunnel.conf; then
+    sed -i '/SO_KEEPALIVE=1/a socket = l:TCP_NODELAY=1\nsocket = r:TCP_NODELAY=1' /etc/stunnel/stunnel.conf
+fi
+
+# WS-Proxy CPU Priority
 sed -i '/Nice=-15/d' /etc/systemd/system/ws-proxy.service
 sed -i '/IOSchedulingClass=realtime/d' /etc/systemd/system/ws-proxy.service
 sed -i '/\[Service\]/a Nice=-15\nIOSchedulingClass=realtime' /etc/systemd/system/ws-proxy.service
@@ -95,9 +105,10 @@ echo "       RareTrickks SSL Manager           "
 echo "========================================="
 read -p "Enter your Domain Name (e.g., Your.domain.com): " DOMAIN
 
-echo "[+] Stopping services to free port 80..."
+echo "[+] Stopping services to free ports..."
 systemctl stop ws-proxy.service
 systemctl stop raretriccks-web.service
+systemctl stop stunnel4
 
 echo "[+] Generating SSL Certificate via Certbot..."
 certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN
@@ -105,8 +116,6 @@ certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@
 if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo "[+] SSL Generated Successfully!"
     
-    # Backstage Swap Logic (Port 2026/2027)
-    sed -i 's/port=2026/port=2027/g' /usr/local/bin/raretriccks_web.py
     sed -i '/\[panel-ssl\]/,$d' /etc/stunnel/stunnel.conf
     
     cat << STUNNEL >> /etc/stunnel/stunnel.conf
@@ -118,6 +127,7 @@ cert = /etc/letsencrypt/live/$DOMAIN/fullchain.pem
 key = /etc/letsencrypt/live/$DOMAIN/privkey.pem
 STUNNEL
 
+    systemctl daemon-reload
     systemctl restart stunnel4
     systemctl start raretriccks-web.service
     systemctl start ws-proxy.service
@@ -125,8 +135,9 @@ STUNNEL
     echo "[+] SUCCESS: Your domain $DOMAIN is securely linked to port 2026!"
 else
     echo "[-] SSL Generation Failed. Check your DNS records."
-    systemctl start ws-proxy.service
+    systemctl restart stunnel4
     systemctl start raretriccks-web.service
+    systemctl start ws-proxy.service
 fi
 EOF
 chmod +x /usr/bin/add-ssl
@@ -233,9 +244,8 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
+echo " - Port 2026/2027 Clean Separation Applied!"
 echo " - 2-Second Anti-Drop Heartbeat Active!"
-echo " - Duplicate-Free Configuration Applied!"
-echo " - Server Reboot Crash FIXED!"
-echo " - Domain SSL Routing Configured!"
+echo " - Duplicate-Free Configuration Active!"
 echo " - Type 'menu' to open your panel."
 echo "========================================="
