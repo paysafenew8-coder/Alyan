@@ -9,8 +9,8 @@ echo "[+] Updating system and installing required packages..."
 apt-get update -y
 apt-get install python3 python3-pip python3-flask stunnel4 openssh-server unzip wget certbot -y
 
-# 2. Enable BBR & Aggressive Network Tuning (Duplicate-Free)
-echo "[+] Applying Aggressive Network Tweaks (Zero Buffering & BBR)..."
+# 2. Enable BBR & 2-Second Heartbeat Tuning (Duplicate-Free)
+echo "[+] Applying Aggressive Network Tweaks & 2-Second Heartbeat..."
 # Smart Cleaner: Removes any existing duplicates first
 sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf
@@ -19,24 +19,24 @@ sed -i '/net.ipv4.tcp_keepalive_intvl/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_keepalive_probes/d' /etc/sysctl.conf
 sed -i '/net.ipv4.tcp_slow_start_after_idle/d' /etc/sysctl.conf
 
-# Freshly Appending single copies
+# Freshly Appending single copies with 2-second anti-drop heartbeat
 cat << EOF >> /etc/sysctl.conf
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
-net.ipv4.tcp_keepalive_time=60
-net.ipv4.tcp_keepalive_intvl=10
+net.ipv4.tcp_keepalive_time=2
+net.ipv4.tcp_keepalive_intvl=2
 net.ipv4.tcp_keepalive_probes=6
 net.ipv4.tcp_slow_start_after_idle=0
 EOF
 sysctl -p
 
-# 3. Optimize SSH Settings (Keep-Alive & Connection Spike Fix)
+# 3. Optimize SSH Settings (2-Second Tunnel Keep-Alive & DNS Fix)
 echo "[+] Optimizing SSH Keep-Alive & DNS settings..."
 sed -i '/ClientAliveInterval/d' /etc/ssh/sshd_config
 sed -i '/ClientAliveCountMax/d' /etc/ssh/sshd_config
 sed -i '/TCPKeepAlive/d' /etc/ssh/sshd_config
 sed -i 's/.*UseDNS.*/UseDNS no/g' /etc/ssh/sshd_config
-echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
+echo "ClientAliveInterval 2" >> /etc/ssh/sshd_config
 echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
 echo "TCPKeepAlive yes" >> /etc/ssh/sshd_config
 echo "UseDNS no" >> /etc/ssh/sshd_config
@@ -67,7 +67,7 @@ openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /
 sed -i 's|cert = .*|cert = /etc/stunnel/stunnel.pem|g' /etc/stunnel/stunnel.conf
 sed -i '/key = .*/d' /etc/stunnel/stunnel.conf
 
-# Stunnel Reboot Fix (Ensures VPN starts automatically after VPS restarts)
+# Stunnel Reboot Fix & Service Auto-Enable
 sed -i 's/ENABLED=0/ENABLED=1/g' /etc/default/stunnel4
 
 # Python Bugs Fix
@@ -105,7 +105,7 @@ certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@
 if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo "[+] SSL Generated Successfully!"
     
-    # Backstage Swap Logic
+    # Backstage Swap Logic (Port 2026/2027)
     sed -i 's/port=2026/port=2027/g' /usr/local/bin/raretriccks_web.py
     sed -i '/\[panel-ssl\]/,$d' /etc/stunnel/stunnel.conf
     
@@ -225,7 +225,7 @@ systemctl enable --now raretriccks-monitor.service
 systemctl enable --now ws-proxy.service
 systemctl restart raretriccks-monitor.service
 
-# 11. Restarting Main Tunnels
+# 11. Finalizing Setup
 echo "[+] Finalizing Setup..."
 systemctl restart ssh
 systemctl restart stunnel4
@@ -233,8 +233,8 @@ rm -f /root/panel_backup.zip
 
 echo "========================================="
 echo " INSTALLATION COMPLETE! "
-echo " - Anti-Duplication System Active!"
-echo " - Video Buffering Bug FIXED!"
+echo " - 2-Second Anti-Drop Heartbeat Active!"
+echo " - Duplicate-Free Configuration Applied!"
 echo " - Server Reboot Crash FIXED!"
 echo " - Domain SSL Routing Configured!"
 echo " - Type 'menu' to open your panel."
